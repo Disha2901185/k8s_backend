@@ -1,0 +1,604 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserStatus {
+  ACTIVE
+  INVITED
+  DISABLED
+  DELETED
+}
+
+enum AccessStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum LeadSourceType {
+  WEB_FORM
+  AI_ASSISTANT
+  WHATSAPP
+  RESOURCE_DOWNLOAD
+  EVENT_REGISTRATION
+  EMAIL_INQUIRY
+  LINKEDIN
+  CUSTOM
+}
+
+enum LeadStatus {
+  NEW
+  QUALIFIED
+  ARCHIVED
+  CONTACTED
+}
+
+
+enum DealStage {
+  DISCOVERY
+  PROPOSAL
+  NEGOTIATION
+  NOT_PROGRESSING
+  CLOSED_WON
+}
+
+model Tenant {
+  id                String               @id @default(cuid())
+  name              String
+  legalName         String?
+  slug              String               @unique
+  isActive          Boolean              @default(true)
+  logoUrl           String?
+  billingStreet     String?
+  billingCity       String?
+  billingState      String?
+  billingStateCode  String?
+  billingCountry    String?
+  billingZip        String?
+  taxId             String?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  users             User[]
+  roles             Role[]
+  pageAccesses      TenantPageAccess[]
+  sessions          Session[]
+  accessAuditLogs   AccessAuditLog[]
+  leadApiCredential TenantLeadCredential?
+  companies         Company[]
+  contacts          Contact[]
+  associates        Associate[]
+  leads             Lead[]
+  deals             Deal[]
+  workOrders        WorkOrder[]
+  workOrderItems    WorkOrderItem[]
+  workOrderSchedules WorkOrderSchedule[]
+  workOrderInvoices WorkOrderInvoice[]
+  workOrderInvoiceItems WorkOrderInvoiceItem[]
+  workOrderReceipts WorkOrderReceipt[]
+  itemTypes         TenantItemType[]
+  hsnSacCodes       TenantHsnSacCode[]
+}
+
+model TenantItemType {
+  id              String   @id @default(cuid())
+  tenantId        String
+  label           String
+  normalizedLabel String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, normalizedLabel])
+  @@index([tenantId])
+  @@index([tenantId, label])
+}
+
+model TenantHsnSacCode {
+  id             String   @id @default(cuid())
+  tenantId       String
+  code           String
+  normalizedCode String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, normalizedCode])
+  @@index([tenantId])
+  @@index([tenantId, code])
+}
+
+model TenantLeadCredential {
+  id                    String   @id @default(cuid())
+  tenantId              String   @unique
+  clientId              String   @unique
+  clientSecretHash      String
+  clientSecretEncrypted String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  tenant                Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  ingestedLeads         Lead[]
+}
+
+model User {
+  id               String           @id @default(cuid())
+  tenantId         String
+  email            String
+  firstName        String
+  lastName         String
+  passwordHash     String
+  status           UserStatus       @default(ACTIVE)
+  isDeleted        Boolean          @default(false)
+  deletedAt        DateTime?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  tenant           Tenant           @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  userRoles        UserRole[]
+  userPageAccesses UserPageAccess[]
+  sessions         Session[]
+  accessChanges    AccessAuditLog[] @relation("AccessAuditActor")
+  accessTargets    AccessAuditLog[] @relation("AccessAuditTarget")
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+}
+
+model Role {
+  id               String           @id @default(cuid())
+  tenantId         String
+  name             String
+  description      String?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  tenant           Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userRoles        UserRole[]
+  permissions      Permission[]
+  accessAuditLogs  AccessAuditLog[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+}
+
+model AppModule {
+  id          String       @id @default(cuid())
+  key         String       @unique
+  label       String
+  description String?
+  sortOrder   Int          @default(0)
+  isSystem    Boolean      @default(false)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  pages       ModulePage[]
+  permissions Permission[]
+}
+
+model ModulePage {
+  id                 String             @id @default(cuid())
+  moduleId           String
+  parentPageId       String?
+  key                String
+  label              String
+  routePath          String?            @unique
+  iconKey            String?
+  description        String?
+  sortOrder          Int                @default(0)
+  isActive           Boolean            @default(true)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  module             AppModule          @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  parentPage         ModulePage?        @relation("ModulePageHierarchy", fields: [parentPageId], references: [id], onDelete: SetNull)
+  childPages         ModulePage[]       @relation("ModulePageHierarchy")
+  permissions        Permission[]
+  tenantPageAccesses TenantPageAccess[]
+  userPageAccesses   UserPageAccess[]
+
+  @@unique([moduleId, key])
+  @@index([moduleId])
+  @@index([parentPageId])
+}
+
+model Permission {
+  id          String      @id @default(cuid())
+  moduleId    String?
+  pageId      String?
+  action      String
+  resource    String
+  description String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  module      AppModule?  @relation(fields: [moduleId], references: [id], onDelete: SetNull)
+  page        ModulePage? @relation(fields: [pageId], references: [id], onDelete: SetNull)
+  roles       Role[]
+
+  @@unique([action, resource])
+  @@index([moduleId])
+  @@index([pageId])
+}
+
+model TenantPageAccess {
+  id        String       @id @default(cuid())
+  tenantId  String
+  pageId    String
+  status    AccessStatus @default(ACTIVE)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  tenant    Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  page      ModulePage   @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, pageId])
+  @@index([tenantId])
+  @@index([pageId])
+}
+
+model UserPageAccess {
+  id        String     @id @default(cuid())
+  userId    String
+  pageId    String
+  canRead   Boolean    @default(false)
+  canWrite  Boolean    @default(false)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  page      ModulePage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, pageId])
+  @@index([userId])
+  @@index([pageId])
+}
+
+model UserRole {
+  id        String   @id @default(cuid())
+  userId    String
+  roleId    String
+  createdAt DateTime @default(now())
+  role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId])
+}
+
+model Session {
+  id               String   @id @default(cuid())
+  tenantId         String
+  userId           String
+  refreshTokenHash String
+  userAgent        String?
+  ipAddress        String?
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  tenant           Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, userId])
+}
+
+model AccessAuditLog {
+  id           String   @id @default(cuid())
+  tenantId     String
+  actorUserId  String
+  targetUserId String?
+  roleId       String?
+  eventType    String
+  entityType   String
+  entityId     String?
+  summary      String
+  metadata     Json?
+  createdAt    DateTime @default(now())
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  actorUser    User     @relation("AccessAuditActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+  targetUser   User?    @relation("AccessAuditTarget", fields: [targetUserId], references: [id], onDelete: SetNull)
+  role         Role?    @relation(fields: [roleId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, actorUserId])
+  @@index([tenantId, targetUserId])
+  @@index([tenantId, roleId])
+}
+
+model Company {
+  id               String    @id @default(cuid())
+  tenantId         String
+  name             String
+  normalizedName   String
+  industry         String?
+  phone            String?
+  website          String?
+  status           String    @default("Prospect")
+  taxId            String?
+  paymentTerms     String?
+  currency         String?
+  billingStreet    String?
+  billingCity      String?
+  billingState     String?
+  billingCountry   String?
+  billingZip       String?
+  placeOfSupply    String?
+  primaryContactId String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  tenant           Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  primaryContact   Contact?  @relation("CompanyPrimaryContact", fields: [primaryContactId], references: [id], onDelete: SetNull)
+  contacts         Contact[] @relation("CompanyContacts")
+  leads            Lead[]
+  deals            Deal[]
+
+  @@unique([tenantId, normalizedName])
+  @@index([tenantId])
+  @@index([tenantId, name])
+}
+
+model Contact {
+  id                  String    @id @default(cuid())
+  tenantId            String
+  companyId           String?
+  firstName           String
+  lastName            String?
+  fullName            String
+  email               String?
+  phone               String?
+  title               String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  tenant              Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  company             Company?  @relation("CompanyContacts", fields: [companyId], references: [id], onDelete: SetNull)
+  primaryForCompanies Company[] @relation("CompanyPrimaryContact")
+  convertedLeads      Lead[]    @relation("LeadConvertedContact")
+  primaryDeals        Deal[]    @relation("DealPrimaryContact")
+
+  @@index([tenantId])
+  @@index([tenantId, companyId])
+  @@index([tenantId, fullName])
+  @@index([tenantId, email])
+}
+
+model Associate {
+  id             String   @id @default(cuid())
+  tenantId       String
+  name           String
+  normalizedName String
+  email          String?
+  phone          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  deals          Deal[]
+
+  @@unique([tenantId, normalizedName])
+  @@index([tenantId])
+  @@index([tenantId, name])
+}
+
+model Lead {
+  id                   String                @id @default(cuid())
+  tenantId             String
+  sourceType           LeadSourceType
+  status               LeadStatus            @default(NEW)
+  name                 String?
+  email                String?
+  phone                String?
+  companyName          String?
+  subject              String?
+  messagePreview       String?
+  externalSourceId     String?
+  dedupeKey            String?
+  sourcePayload        Json
+  sourceSchemaVersion  Int                   @default(1)
+  capturedAt           DateTime              @default(now())
+  lastStatusChangedAt  DateTime              @default(now())
+  archivedAt           DateTime?
+  deletedAt            DateTime?
+  isDeleted            Boolean               @default(false)
+  companyId            String?
+  convertedContactId   String?
+  ingestedCredentialId String?
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  tenant               Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  company              Company?              @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  convertedContact     Contact?              @relation("LeadConvertedContact", fields: [convertedContactId], references: [id], onDelete: SetNull)
+  ingestedCredential   TenantLeadCredential? @relation(fields: [ingestedCredentialId], references: [id], onDelete: SetNull)
+  convertedDeal        Deal?                 @relation("LeadConvertedDeal")
+
+  @@index([tenantId])
+  @@index([tenantId, status, capturedAt])
+  @@index([tenantId, sourceType, capturedAt])
+  @@index([tenantId, email])
+  @@index([tenantId, phone])
+  @@index([tenantId, dedupeKey])
+}
+
+model WorkOrder {
+  id              String    @id @default(cuid())
+  tenantId        String
+  dealId          String    @unique
+  actualValue     Decimal   @db.Decimal(18, 2)
+  taxId           String?
+  billingStreet   String?
+  billingCity     String?
+  billingState    String?
+  billingCountry  String?
+  billingZip      String?
+  paymentTerms    String?
+  projectType     String?
+  poNumber        String?
+  poDate          DateTime?
+  poEndDate       DateTime?
+  poDocumentUrl   String?
+  duration        String?
+  startDate       DateTime?
+  endDate         DateTime?
+  scopeOfWork     String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  tenant    Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  deal      Deal                 @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  items     WorkOrderItem[]
+  schedules WorkOrderSchedule[]
+  invoices  WorkOrderInvoice[]
+  invoiceItems WorkOrderInvoiceItem[]
+  receipts  WorkOrderReceipt[]
+
+  @@index([tenantId])
+}
+
+model WorkOrderItem {
+  id               String    @id @default(cuid())
+  tenantId         String
+  workOrderId      String
+  itemDetails      String
+  itemType         String
+  itemAmount       Decimal   @db.Decimal(18, 2)
+  billingFrequency String
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  tenant           Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  workOrder        WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  schedules        WorkOrderSchedule[]
+
+  @@index([tenantId])
+  @@index([workOrderId])
+}
+
+model WorkOrderSchedule {
+  id               String    @id @default(cuid())
+  tenantId         String
+  workOrderId      String
+  workOrderItemId  String?
+  itemDetails      String
+  amount           Decimal   @db.Decimal(18, 2)
+  scheduleDate     DateTime
+  installmentLabel String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  tenant           Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  workOrder        WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  workOrderItem    WorkOrderItem? @relation(fields: [workOrderItemId], references: [id], onDelete: SetNull)
+  invoiceItems     WorkOrderInvoiceItem[]
+
+  @@index([tenantId])
+  @@index([workOrderId])
+  @@index([workOrderItemId])
+}
+
+model WorkOrderInvoice {
+  id            String            @id @default(cuid())
+  tenantId      String
+  workOrderId   String
+  itemDetails   String
+  invoiceNo     String
+  invoiceDate   DateTime
+  amount        Decimal           @db.Decimal(18, 2)
+  tax           Decimal           @default(0) @db.Decimal(18, 2)
+  totalAmount   Decimal           @db.Decimal(18, 2)
+  conversionRate Decimal?         @db.Decimal(18, 6)
+  inrTotalAmount Decimal?         @db.Decimal(18, 2)
+  waiveOff      Boolean           @default(false)
+  waiveOffAmount Decimal          @default(0) @db.Decimal(18, 2)
+  waiveOffReason String?
+  customerNotes String?
+  termsAndConditions String?
+  placeOfSupply  String?
+  taxType        String?
+  gstPercent     Decimal           @default(0) @db.Decimal(6, 2)
+  igstAmount     Decimal           @default(0) @db.Decimal(18, 2)
+  cgstAmount     Decimal           @default(0) @db.Decimal(18, 2)
+  sgstAmount     Decimal           @default(0) @db.Decimal(18, 2)
+  createdFromInvoiceBuilder Boolean @default(false)
+  savedAndDownloaded Boolean      @default(false)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  tenant        Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  workOrder     WorkOrder         @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  receipt       WorkOrderReceipt?
+  invoiceItems  WorkOrderInvoiceItem[]
+
+  @@index([tenantId])
+  @@index([workOrderId])
+  @@unique([tenantId, invoiceNo])
+}
+
+model WorkOrderInvoiceItem {
+  id                  String            @id @default(cuid())
+  tenantId            String
+  workOrderId         String
+  invoiceId           String
+  workOrderScheduleId String?
+  itemLabel           String
+  hsnSac              String?
+  qty                 Decimal           @default(1) @db.Decimal(18, 2)
+  rate                Decimal           @default(0) @db.Decimal(18, 2)
+  taxLabel            String?
+  taxPercent          Decimal           @default(0) @db.Decimal(5, 2)
+  amount              Decimal           @default(0) @db.Decimal(18, 2)
+  tax                 Decimal           @default(0) @db.Decimal(18, 2)
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  tenant              Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  workOrder           WorkOrder         @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  invoice             WorkOrderInvoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  schedule            WorkOrderSchedule? @relation(fields: [workOrderScheduleId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([workOrderId])
+  @@index([invoiceId])
+  @@index([workOrderScheduleId])
+}
+
+model WorkOrderReceipt {
+  id                       String           @id @default(cuid())
+  tenantId                 String
+  workOrderId              String
+  invoiceId                String?          @unique
+  invoiceNo                String
+  receiptDate              DateTime
+  amountReceived           Decimal          @db.Decimal(18, 2)
+  tds                      Decimal          @default(0) @db.Decimal(18, 2)
+  chargesAndLevies         Decimal          @default(0) @db.Decimal(18, 2)
+  withholding             Decimal          @default(0) @db.Decimal(18, 2)
+  paymentMode              String
+  details                  String?
+  createdAt                DateTime         @default(now())
+  updatedAt                DateTime         @updatedAt
+  tenant                   Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  workOrder                WorkOrder        @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  invoice                  WorkOrderInvoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([workOrderId])
+}
+
+model Deal {
+  id                  String     @id @default(cuid())
+  tenantId            String
+  companyId           String
+  primaryContactId    String?
+  associateId         String?
+  sourceLeadId        String?    @unique
+  title               String
+  description         String?
+  currency            String
+  value               Decimal    @db.Decimal(18, 2)
+  stage               DealStage  @default(DISCOVERY)
+  associateSuccessFee Decimal?   @db.Decimal(5, 2)
+  isDeleted           Boolean    @default(false)
+  deletedAt           DateTime?
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
+  tenant              Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  company             Company    @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  primaryContact      Contact?   @relation("DealPrimaryContact", fields: [primaryContactId], references: [id], onDelete: SetNull)
+  associate           Associate? @relation(fields: [associateId], references: [id], onDelete: SetNull)
+  sourceLead          Lead?      @relation("LeadConvertedDeal", fields: [sourceLeadId], references: [id], onDelete: SetNull)
+  workOrder           WorkOrder?
+
+  @@index([tenantId])
+  @@index([tenantId, isDeleted])
+  @@index([tenantId, stage])
+  @@index([tenantId, companyId])
+}
