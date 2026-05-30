@@ -8,6 +8,8 @@ RUN npm install
 COPY tsconfig*.json nest-cli.json ./
 COPY scripts ./scripts
 COPY prisma ./prisma
+COPY constant.js ./
+
 RUN npm run prisma:generate
 
 COPY src ./src
@@ -24,9 +26,10 @@ RUN npm install --omit=dev
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/scripts ./scripts
+COPY --from=builder /app/constant.js ./constant.js
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 
 EXPOSE 3000
 
-CMD ["sh", "-c", "node scripts/sync-prisma-client.js && npx prisma migrate deploy && node dist/main.js"]
+CMD ["sh", "-c", "node scripts/sync-prisma-client.js && npx prisma migrate deploy && node dist/src/main.js"]
